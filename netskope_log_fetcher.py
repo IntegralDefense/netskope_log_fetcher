@@ -52,8 +52,31 @@ class TinyTimeWriter:
 
 
 def write_logs(netskope_object):
+    """ Writes logs to the type-specific log file.
+
+        Pull the log files from netskope_object.log_dictionary, and
+        write them to file.  If log_dictionary looks like this:
+        {
+            'application': [list of logs],
+            'page': [list of logs],
+        }
+        Then this is an 'EventClient' object and we will write to two
+        files like this:
+
+        /file/path/to/logs/event/application.log
+        and
+        /file/path/to/logs/event/page.log
+
+    Parameters
+    ----------
+    netskope_object: netskope_fetcher.events.EventClient
+                     OR netskope_fetcher.alerts.AlertClient
+        Object contains the log files in log_dictionary.
+    """
+
     current_directory = os.path.dirname(__file__)
     for type_, log_list in netskope_object.log_dictionary.items():
+        # Some types have spaces, replace them with underscores
         file_ = replace_spaces(type_)
         # logs/alert or logs/event
         log_path = os.path.join('logs', netskope_object.endpoint_type)
@@ -64,19 +87,32 @@ def write_logs(netskope_object):
         with open(log_file, 'a+') as f:
             try:
                 for log in log_list:
-                    json_string = json.dumps(log)
-                    f.write("{}\n".format(json_string))
+                    f.write(f'{json.dumps(log)}\n')
             except TypeError as t:
+                # Most likely that log_list is not an iterable
                 logging.warn(f'Couldn\'t write logs for {type_}: {t}')
 
 
 def make_dir_if_needed(current_dir, log_dir):
+    """ Helper function to create approriate log directories if they
+        don't already exist
+
+    Parameters
+    ----------
+    current_dir: str
+        /path/to/current/directory
+    log_dir: str
+        logs/event or logs/alert. Will be appended to current_dir
+    """
+
     required_dir = os.path.join(current_dir, log_dir)
     if not os.path.isdir(required_dir):
         os.mkdir(required_dir)
 
 
 def replace_spaces(some_string):
+    """ Substitute spaces with underscores"""
+
     return re.sub(' ', '_', some_string)
 
 
@@ -90,6 +126,10 @@ if __name__ == "__main__":
     tiny_time = TinyTimeWriter()
     token = Token()
 
+    # End time will always be 'right now'
+    # start_time will be the end of the last successful run, or in the
+    #    case that the last timestamp isn't available, set the start
+    #    time to ten minutes ago.
     end_time = int(datetime.now().timestamp())
     start_time = tiny_time.get_last_log_time() or (end_time - 600)
 
@@ -106,7 +146,8 @@ if __name__ == "__main__":
     for client in clients:
         client.get_all_event_types()
         write_logs(client)
-
+        
+    # Save the end time so that it can be used in the next run.
     tiny_time.save_last_log_time(end_time)
 
     exit()
