@@ -85,6 +85,7 @@ def write_logs(netskope_object):
         log_file = os.path.join(current_directory, log_path, f'{file_}.log')
 
         with open(log_file, 'a+') as f:
+            logging.debug('Writing to {} log file'.format(log_file))
             try:
                 for log in log_list:
                     f.write(f'{json.dumps(log)}\n')
@@ -135,8 +136,8 @@ if __name__ == "__main__":
 
     logging.info(
         f'Running from '
-        f'{datetime.strftime(datetime.fromtimestamp(end_time), "%c")} '
-        f'to {datetime.strftime(datetime.fromtimestamp(start_time), "%c")}')
+        f'{datetime.strftime(datetime.fromtimestamp(start_time), "%c")} '
+        f'to {datetime.strftime(datetime.fromtimestamp(end_time), "%c")}')
 
     clients = [
         EventClient(token=token, start=start_time, end=end_time),

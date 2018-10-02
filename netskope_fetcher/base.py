@@ -57,6 +57,7 @@ class BaseNetskopeClient:
         """
 
         cpus = cpu_count()
+        logging.debug('Found {} available CPUs'.format(str(cpus)))
         with Pool(processes=cpus) as p:
             map_logs_list = p.map(
                 self._get_all_event_type_worker,
@@ -97,8 +98,10 @@ class BaseNetskopeClient:
             List will be empty if there was an error and will return
             a list of dict-formatted logs if there were logs available.
         """
-
+        logging.debug('Calling api with event type {}'.format(_params['type']))
         r = requests.get(url=self.url, params=_params)
+        logging.info('Received api response for event type {} with status code {} and status '
+                     '{}'.format(_params['type'], str(r.status_code), r.json()['status']))
         if (r.status_code != 200) or (r.json()['status'] != 'success'):
             # Log the issue / raise exception
             logging.error(f'Response received from requests: '
