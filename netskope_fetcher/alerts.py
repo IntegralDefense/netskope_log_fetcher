@@ -30,13 +30,13 @@ class AlertClient(BaseNetskopeClient):
             "anomaly",
             "Compromised Credential",
             "policy",
-            "Legal Hold",
+            # "Legal Hold",    THROWS ERRORS AS INVALID
             "malsite",
             "Malware",
             "DLP",
             "watchlist",
             "quarantine",
-            "Remediation",
+            # "Remediation",   THROWS ERRORS AS INVALID
         ]
         self.endpoint_type = 'alert'
 
