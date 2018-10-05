@@ -6,6 +6,7 @@ import re
 
 from dotenv import load_dotenv
 
+from netskope_fetcher.bootstrap import NetskopeAsyncBootstrap
 from netskope_fetcher.token import Token
 from netskope_fetcher.events import EventClient
 from netskope_fetcher.alerts import AlertClient
@@ -44,6 +45,10 @@ class TinyTimeWriter:
             with open(self.time_file_path, 'r') as _file:
                 time_stamp = int(_file.readline())
         except FileNotFoundError:
+            # File doesn't exist yet
+            return None
+        except ValueError:
+            # If non-int or empty file.
             return None
         else:
             if time_stamp <= 0:
@@ -91,7 +96,8 @@ def write_logs(netskope_object):
                     f.write(f'{json.dumps(log)}\n')
             except TypeError as t:
                 # Most likely that log_list is not an iterable
-                logging.warn(f'Couldn\'t write logs for {type_}: {t}')
+                logging.warn('Couldn\'t write logs for {}: {}'
+                             ''.format(type_, {t}))
 
 
 def make_dir_if_needed(current_dir, log_dir):
@@ -118,37 +124,46 @@ def replace_spaces(some_string):
 
 
 if __name__ == "__main__":
+    try:
+        setup_logger()
 
-    setup_logger()
+        current_directory = os.path.dirname(__file__)
+        load_dotenv(dotenv_path=os.path.join(current_directory, '.env'))
 
-    current_directory = os.path.dirname(__file__)
-    load_dotenv(dotenv_path=os.path.join(current_directory, '.env'))
+        tiny_time = TinyTimeWriter()
+        token = Token()
 
-    tiny_time = TinyTimeWriter()
-    token = Token()
+        # End time will always be 'right now'
+        # start_time will be the end of the last successful run, or in the
+        #    case that the last timestamp isn't available, set the start
+        #    time to ten minutes ago.
+        end_time = int(datetime.now().timestamp())
+        start_time = tiny_time.get_last_log_time() or (end_time - 600)
 
-    # End time will always be 'right now'
-    # start_time will be the end of the last successful run, or in the
-    #    case that the last timestamp isn't available, set the start
-    #    time to ten minutes ago.
-    end_time = int(datetime.now().timestamp())
-    start_time = tiny_time.get_last_log_time() or (end_time - 600)
+        logging.info('Running from {} to {}'.format(
+                datetime.strftime(datetime.fromtimestamp(start_time), "%c"),
+                datetime.strftime(datetime.fromtimestamp(end_time), "%c")
+            ))
 
-    logging.info(
-        f'Running from '
-        f'{datetime.strftime(datetime.fromtimestamp(start_time), "%c")} '
-        f'to {datetime.strftime(datetime.fromtimestamp(end_time), "%c")}')
+        clients = [
+            EventClient(token=token, start=start_time, end=end_time),
+            AlertClient(token=token, start=start_time, end=end_time),
+        ]
 
-    clients = [
-        EventClient(token=token, start=start_time, end=end_time),
-        AlertClient(token=token, start=start_time, end=end_time),
-    ]
+        bootstrap = NetskopeAsyncBootstrap(client_list=clients)
+        bootstrap.run()
 
-    for client in clients:
-        client.get_all_event_types()
-        write_logs(client)
-        
-    # Save the end time so that it can be used in the next run.
-    tiny_time.save_last_log_time(end_time)
+        # Write to the log files
+        for client in clients:
+            write_logs(client)
+
+        # Save the end time so that it can be used in the next run.
+        # This is purposely left at the end of the program so that the
+        # subsequent run of the program will gather logs that may have been
+        # missed if the script were to fail mid-stream.
+        tiny_time.save_last_log_time(end_time)
+    except Exception as e:
+        logging.exception('Exception Occured')
+        raise
 
     exit()
