@@ -45,6 +45,10 @@ class TinyTimeWriter:
             with open(self.time_file_path, 'r') as _file:
                 time_stamp = int(_file.readline())
         except FileNotFoundError:
+            # File doesn't exist yet
+            return None
+        except ValueError:
+            # If non-int or empty file.
             return None
         else:
             if time_stamp <= 0:
