@@ -87,13 +87,13 @@ def write_logs(netskope_object):
         log_path = os.path.join('logs', netskope_object.endpoint_type)
         make_dir_if_needed(current_directory, log_path)
         # Ex: base/file/path/logs/alert/type.log
-        log_file = os.path.join(current_directory, log_path, f'{file_}.log')
+        log_file = os.path.join(current_directory, log_path, '{}.log'.format(file_))
 
         with open(log_file, 'a+') as f:
             logging.debug('Writing to {} log file'.format(log_file))
             try:
                 for log in log_list:
-                    f.write(f'{json.dumps(log)}\n')
+                    f.write('{}\n'.format(json.dumps(log))
             except TypeError as t:
                 # Most likely that log_list is not an iterable
                 logging.warn('Couldn\'t write logs for {}: {}'
