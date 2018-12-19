@@ -93,7 +93,7 @@ def write_logs(netskope_object):
             logging.debug('Writing to {} log file'.format(log_file))
             try:
                 for log in log_list:
-                    f.write('{}\n'.format(json.dumps(log))
+                    f.write('{}\n'.format(json.dumps(log)))
             except TypeError as t:
                 # Most likely that log_list is not an iterable
                 logging.warn('Couldn\'t write logs for {}: {}'
