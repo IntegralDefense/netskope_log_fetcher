@@ -67,3 +67,4 @@ venv.bak/
 .mypy_cache/
 netskope_log_fetcher.code-workspace
 .vscode
+.idea
