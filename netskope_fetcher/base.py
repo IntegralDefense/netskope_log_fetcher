@@ -1,8 +1,33 @@
+"""Defines the base Netskope client class and all attributes,
+functions, and coroutines required to asynchronously interact with the
+Netskope API."""
+
 from datetime import datetime
 import asyncio
 import logging
 import json
 import os
+
+
+def _status_check(json_, type_, status_code, pagination):
+    """ Check to see if response is valid or un-expected """
+
+    if (status_code != 200) or (json_["status"] != "success"):
+        # Log the issue
+        logging.error(
+            "Response received from requests: %s", json.dumps(json_, indent=2)
+        )
+        # If we're pulling down the extended logs (over max limit)
+        #    then we want to note that in the logs so we can tell
+        #    that we received some of the logs but not all of them.
+        if pagination:
+            logging.error(
+                "Error with event type %s when pulling " "pagination %s of logs.",
+                type_,
+                str(pagination),
+            )
+        return False
+    return True
 
 
 class BaseNetskopeClient:
@@ -36,19 +61,21 @@ class BaseNetskopeClient:
         The URL of the endpoint
     session: aiohttp.ClientSession object
         Used for non-blocking HTTP requests
+    max_logs: int
+        The maximum amount of logs before pagination must be performed.
     """
 
-    def __init__(self, token=None, start=None,
-                 end=None, url=None, session=None):
-        self.token = token
-        self.end = end or int(datetime.now().timestamp())
-        self.start = start or (
-            self.end - int(os.environ['NETSKOPE_DEFAULT_INTERVAL']))
+    def __init__(self, **kwargs):
+        self.token = kwargs.get("token")
+        self.end = kwargs.get("end") or int(datetime.now().timestamp())
+        self.start = kwargs.get("start") or (
+            self.end - int(os.environ["NETSKOPE_DEFAULT_INTERVAL"])
+        )
         self.type_list = []
         self.log_dictionary = {}
-        self.url = url
-        self.session = session
-        self.max_logs = 5000
+        self.session = kwargs.get("session")
+        self.url = kwargs.get("url")
+        self.max_logs = 5000  # TODO - move this to config file
 
     async def get_logs(self, session, loop):
         """ This function serves as the entry point into the
@@ -73,9 +100,7 @@ class BaseNetskopeClient:
             The current running loop in which we want to add tasks to
         """
 
-        tasks = [
-            self._async_worker(session, type_) for type_ in self.type_list
-        ]
+        tasks = [self._async_worker(session, type_) for type_ in self.type_list]
         await asyncio.gather(*tasks, loop=loop)
 
     async def _async_worker(self, session, event_type):
@@ -91,10 +116,10 @@ class BaseNetskopeClient:
         """
 
         params = {
-            'token': self.token.auth_token,
-            'type': event_type,
-            'starttime': self.start,
-            'endtime': self.end,
+            "token": self.token.auth_token,
+            "type": event_type,
+            "starttime": self.start,
+            "endtime": self.end,
         }
         await self._api_call_2(session, params)
 
@@ -115,7 +140,7 @@ class BaseNetskopeClient:
             Dictonary that contains parameters to be passed in the
             query string of the API call.
         """
-        type_ = _params['type']
+        type_ = _params["type"]
         need_recursion = False
 
         # If this is a recursive call to pull down more logs for a
@@ -127,15 +152,15 @@ class BaseNetskopeClient:
         # Add the skip value to the parameters so netskope will not
         # return logs we have already received.
         if skip:
-            _params['skip'] = skip
+            _params["skip"] = skip
 
         # Start async session to pull down logs.
-        async with session.get(self.url, params=_params) as r:
-            json_ = await r.json()
-            status_code = r.status
+        async with session.get(self.url, params=_params) as resp:
+            json_ = await resp.json()
+            status_code = resp.status
 
             # Check to make sure status was 200 or 'success'
-            if not self._status_check(json_, type_, status_code, pagination):
+            if not _status_check(json_, type_, status_code, pagination):
                 return
 
             # Did we hit our log limit in the response and need to go
@@ -151,31 +176,27 @@ class BaseNetskopeClient:
 
             # And since we have the former function, we can do this.
             # It covers both first and recursive calls.
-            self.log_dictionary[type_] += json_['data']
+            self.log_dictionary[type_] += json_["data"]
 
             # If we need to, pull down supplemental logs.
             if need_recursion:
-                await self._get_remaining_logs(
-                    type_, session, _params, pagination, skip)
+                await self._get_remaining_logs(type_, session, _params, pagination)
 
             # If this is NOT a supplemental request for logs, we can
             # now know the total count of the logs we pulled down for
             # this type.
             if not skip:
                 length = str(len(self.log_dictionary[type_]))
-                logging.info('Consumed {} logs for type: {}'
-                             ''.format(length, type_))
+                logging.info("Consumed %s logs for type: %s", length, type_)
 
-    async def _get_remaining_logs(self, type_, session,
-                                  _params, pagination, skip):
+    async def _get_remaining_logs(self, type_, session, _params, pagination):
         """ Make another call to pull down the remaining logs for the
             current type.
         """
 
         next_skip = len(self.log_dictionary[type_])
         pagination += 1
-        await self._api_call_2(
-            session, _params, pagination=pagination, skip=next_skip)
+        await self._api_call_2(session, _params, pagination=pagination, skip=next_skip)
 
     def _api_has_more_logs_to_grab(self, json_, type_):
         """ Two purposes:
@@ -198,10 +219,9 @@ class BaseNetskopeClient:
         """
 
         try:
-            return len(json_['data']) >= self.max_logs
+            return len(json_["data"]) >= self.max_logs
         except KeyError:
-                logging.error("Missing 'data' key in response for {}"
-                              "".format(type_))
+            logging.error("Missin 'data' key in response for %s", type_)
 
     def _prep_type_if_no_logs_already_present(self, type_):
         """ Initialize a list for the current type """
@@ -226,31 +246,16 @@ class BaseNetskopeClient:
         """
 
         if pagination:
-            logging.info('Async API with event type {} has more than {}'
-                         ' events. Now making pagination request number {}'
-                         ''.format(type_, self.max_logs, str(pagination)))
+            logging.info(
+                "Async API with event type {} has more than %s"
+                " events. Now making pagination request number %s",
+                self.max_logs,
+                str(pagination),
+            )
         else:
-            logging.info('Calling Async API with event type {}'
-                         ''.format(type_))
+            logging.info("Calling Async API with event type %s.", type_)
 
-    def _status_check(self, json_, type_, status_code, pagination):
-        """ Check to see if response is valid or un-expected """
-
-        if (status_code != 200) or (json_['status'] != 'success'):
-            # Log the issue
-            logging.error('Response received from requests: '
-                          '{}'.format(json.dumps(json_, indent=2)))
-            # If we're pulling down the extended logs (over max limit)
-            #    then we want to note that in the logs so we can tell
-            #    that we received some of the logs but not all of them.
-            if pagination:
-                logging.error('Error with event type {} when pulling '
-                              'pagination {} of logs.'
-                              ''.format(type_, str(pagination)))
-            return False
-        return True
-
-    def handle_response_json(self, type_, json_, status_code):
+    def handle_response_json(self, type_, json_):
         """ Validate response and add to self.log_dict which will be
             used to write logs to file later.
 
@@ -265,9 +270,9 @@ class BaseNetskopeClient:
         """
         try:
             # {'type': [{log1}, {log2},...{logn}]}
-            self.log_dictionary[type_] = json_['data']
+            self.log_dictionary[type_] = json_["data"]
             length = str(len(self.log_dictionary[type_]))
-            logging.info('Consumed {} logs for type: {}'.format(length, type_))
-        except KeyError as k:
+            logging.info("Consumed %s logs for type: %s", length, type_)
+        except KeyError:
             # No data, should at least be an empty list
-            logging.error('{} log had no data field.'.format(type_))
+            logging.error("%s log had no data field.", type_)

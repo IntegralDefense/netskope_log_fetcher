@@ -1,3 +1,9 @@
+""" This module defines the AlertClient class which adds the following
+to the inherited BaseNetskopeClient class: log types (self.type_list),
+endpoint type (self.endpoint_type), and the URL endpoint used to pull
+logs for Nestkope Alerts.
+"""
+
 import os
 
 from netskope_fetcher.base import BaseNetskopeClient
@@ -38,11 +44,11 @@ class AlertClient(BaseNetskopeClient):
             "quarantine",
             # "Remediation",   THROWS ERRORS AS INVALID
         ]
-        self.endpoint_type = 'alert'
+        self.endpoint_type = "alert"
 
-        if 'url' in kwargs:
-            url = kwargs['url']
-        else:
-            url = None
-        self.url = url or ("https://{}.eu.goskope.com/api/v1/alerts"
-                           "".format(os.environ['NETSKOPE_TENANT_NAME']))
+        url = kwargs.get("url", None)
+
+        self.url = url or (
+            "https://{}.eu.goskope.com/api/v1/alerts"
+            "".format(os.environ["NETSKOPE_TENANT_NAME"])
+        )
