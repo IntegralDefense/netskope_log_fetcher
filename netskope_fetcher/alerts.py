@@ -30,8 +30,8 @@ class AlertClient(BaseNetskopeClient):
         The URL of the endpoint
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.type_list = [
             "anomaly",
             "Compromised Credential",
