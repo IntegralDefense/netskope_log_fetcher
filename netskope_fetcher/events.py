@@ -1,3 +1,9 @@
+""" This module defines the EventClient class which adds the following
+to the inherited BaseNetskopeClient class: log types (self.type_list),
+endpoint type (self.endpoint_type), and the URL endpoint used to pull
+logs for Nestkope Events.
+"""
+
 import os
 
 from netskope_fetcher.base import BaseNetskopeClient
@@ -24,15 +30,14 @@ class EventClient(BaseNetskopeClient):
         The URL of the endpoint
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.type_list = ['page', 'application', 'audit', 'infrastructure']
-        self.endpoint_type = 'event'
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.type_list = ["page", "application", "audit", "infrastructure"]
+        self.endpoint_type = "event"
 
-        if 'url' in kwargs:
-            url = kwargs['url']
-        else:
-            url = None
+        url = kwargs.get("url", None)
+
         self.url = url or (
             "https://{}.eu.goskope.com/api/v1/events"
-            "".format(os.environ['NETSKOPE_TENANT_NAME']))
+            "".format(os.environ["NETSKOPE_TENANT_NAME"])
+        )

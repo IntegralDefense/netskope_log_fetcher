@@ -1,3 +1,6 @@
+"""Main file. Run to pull down Netskope logs."""
+
+
 from datetime import datetime
 import logging
 import json
@@ -14,10 +17,12 @@ from netskope_fetcher.logger import setup_logger
 
 
 class TinyTimeWriter:
+    """Manages writing / reading of the timestamp file."""
 
     def __init__(self, file_path=None):
-        self.time_file_path = (
-            file_path or os.path.join(os.path.dirname(__file__), 'time.log'))
+        self.time_file_path = file_path or os.path.join(
+            os.path.dirname(__file__), "time.log"
+        )
 
     def save_last_log_time(self, _time):
         """
@@ -31,7 +36,7 @@ class TinyTimeWriter:
         datetime string
             String format of the datetime object.
         """
-        with open(self.time_file_path, 'w') as _file:
+        with open(self.time_file_path, "w") as _file:
             _file.write(str(_time))
 
     def get_last_log_time(self):
@@ -42,7 +47,7 @@ class TinyTimeWriter:
         Epoch time stamp for last time the program ran.
         """
         try:
-            with open(self.time_file_path, 'r') as _file:
+            with open(self.time_file_path, "r") as _file:
                 time_stamp = int(_file.readline())
         except FileNotFoundError:
             # File doesn't exist yet
@@ -79,25 +84,24 @@ def write_logs(netskope_object):
         Object contains the log files in log_dictionary.
     """
 
-    current_directory = os.path.dirname(__file__)
+    _current_directory = os.path.dirname(__file__)
     for type_, log_list in netskope_object.log_dictionary.items():
         # Some types have spaces, replace them with underscores
         file_ = replace_spaces(type_)
         # logs/alert or logs/event
-        log_path = os.path.join('logs', netskope_object.endpoint_type)
-        make_dir_if_needed(current_directory, log_path)
+        log_path = os.path.join("logs", netskope_object.endpoint_type)
+        make_dir_if_needed(_current_directory, log_path)
         # Ex: base/file/path/logs/alert/type.log
-        log_file = os.path.join(current_directory, log_path, '{}.log'.format(file_))
+        log_file = os.path.join(_current_directory, log_path, "{}.log".format(file_))
 
-        with open(log_file, 'a+') as f:
-            logging.debug('Writing to {} log file'.format(log_file))
+        with open(log_file, "a+") as _f:
+            logging.debug("Writing to %s log file.", log_file)
             try:
                 for log in log_list:
-                    f.write('{}\n'.format(json.dumps(log)))
-            except TypeError as t:
+                    _f.write("{}\n".format(json.dumps(log)))
+            except TypeError as _t:
                 # Most likely that log_list is not an iterable
-                logging.warn('Couldn\'t write logs for {}: {}'
-                             ''.format(type_, {t}))
+                logging.warning("Couldn't write logs for %s: %s", type_, {_t})
 
 
 def make_dir_if_needed(current_dir, log_dir):
@@ -120,50 +124,51 @@ def make_dir_if_needed(current_dir, log_dir):
 def replace_spaces(some_string):
     """ Substitute spaces with underscores"""
 
-    return re.sub(' ', '_', some_string)
+    return re.sub(" ", "_", some_string)
 
 
 if __name__ == "__main__":
     try:
         setup_logger()
 
-        current_directory = os.path.dirname(__file__)
-        load_dotenv(dotenv_path=os.path.join(current_directory, '.env'))
+        CURRENT_DIRECTORY = os.path.dirname(__file__)
+        load_dotenv(dotenv_path=os.path.join(CURRENT_DIRECTORY, ".env"))
 
-        tiny_time = TinyTimeWriter()
-        token = Token()
+        TINY_TIME = TinyTimeWriter()
+        TOKEN = Token()
 
         # End time will always be 'right now'
         # start_time will be the end of the last successful run, or in the
         #    case that the last timestamp isn't available, set the start
         #    time to ten minutes ago.
-        end_time = int(datetime.now().timestamp())
-        start_time = tiny_time.get_last_log_time() or (end_time - 600)
+        END_TIME = int(datetime.now().timestamp())
+        START_TIME = TINY_TIME.get_last_log_time() or (END_TIME - 600)
 
-        logging.info('Running from {} to {}'.format(
-                datetime.strftime(datetime.fromtimestamp(start_time), "%c"),
-                datetime.strftime(datetime.fromtimestamp(end_time), "%c")
-            ))
+        logging.info(
+            "Running from %s to %s",
+            datetime.strftime(datetime.fromtimestamp(START_TIME), "%c"),
+            datetime.strftime(datetime.fromtimestamp(END_TIME), "%c"),
+        )
 
-        clients = [
-            EventClient(token=token, start=start_time, end=end_time),
-            AlertClient(token=token, start=start_time, end=end_time),
+        CLIENTS = [
+            EventClient(token=TOKEN, start=START_TIME, end=END_TIME),
+            AlertClient(token=TOKEN, start=START_TIME, end=END_TIME),
         ]
 
-        bootstrap = NetskopeAsyncBootstrap(client_list=clients)
-        bootstrap.run()
+        BOOTSTRAP = NetskopeAsyncBootstrap(client_list=CLIENTS)
+        BOOTSTRAP.run()
 
         # Write to the log files
-        for client in clients:
+        for client in CLIENTS:
             write_logs(client)
 
         # Save the end time so that it can be used in the next run.
         # This is purposely left at the end of the program so that the
         # subsequent run of the program will gather logs that may have been
         # missed if the script were to fail mid-stream.
-        tiny_time.save_last_log_time(end_time)
-    except Exception as e:
-        logging.exception('Exception Occured')
+        TINY_TIME.save_last_log_time(END_TIME)
+    except Exception as _e:
+        logging.exception("Exception Occurred: %s.", _e)
         raise
 
     exit()

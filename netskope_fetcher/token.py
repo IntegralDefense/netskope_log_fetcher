@@ -1,3 +1,5 @@
+"""Defines a helper class to hold the Netskope Authentication Token."""
+
 
 import os
 
@@ -8,4 +10,4 @@ class Token:
     def __init__(self, auth_token=None):
         """ Get auth token from environment variables"""
 
-        self.auth_token = auth_token or os.environ['NETSKOPE_AUTH_TOKEN']
+        self.auth_token = auth_token or os.environ["NETSKOPE_AUTH_TOKEN"]

@@ -1,3 +1,8 @@
+"""Bootstraps the event loop and schedules the first set of tasks to
+be scheduled in the event loop. Think of this as the 'entry point' into
+the async operation of the script.
+"""
+
 
 import asyncio
 import aiohttp
@@ -40,7 +45,5 @@ class NetskopeAsyncBootstrap:
         async with aiohttp.ClientSession(loop=loop) as session:
             # Clients are children of
             # netskope_fetcher.base.BaseNetskopeClient
-            tasks = [
-                client.get_logs(session, loop) for client in self.client_list
-            ]
+            tasks = [client.get_logs(session, loop) for client in self.client_list]
             await asyncio.gather(*tasks, loop=loop)
