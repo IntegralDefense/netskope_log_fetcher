@@ -129,10 +129,10 @@ class BaseNetskopeClient:
         """ Pulls down logs from the Netskope API endpoint.
 
             Uses non-blocking HTTP requests to pull down the logs from
-            the API endpoint. Once the response is received, and this
-            coroutine is the active coroutine in the event loop, call
-            the 'handle_response_json' function to validate the
-            response and save data to self.log_dictionary.
+            the API endpoint. Once the response is received, validate
+            the response and save data to self.log_dictionary.
+
+            Performs pagination if necessary.
 
         Parameters
         ----------
@@ -141,7 +141,12 @@ class BaseNetskopeClient:
         _params: dict
             Dictonary that contains parameters to be passed in the
             query string of the API call.
+        pagination: int
+            Keeps track of which iteration of pagination is in scope.
+        skip: int
+            Skip logs up until this number. Used in pagination.
         """
+
         type_ = _params["type"]
         need_recursion = False
 
@@ -159,70 +164,100 @@ class BaseNetskopeClient:
         # Start async session to pull down logs.
         async with session.get(self.url, params=_params) as resp:
 
-            status_code = resp.status
+            status_code, json_ = await self._handle_response(
+                _params=_params, _type=type_, _resp=resp
+            )
 
-            try:
-                json_ = await resp.json()
+            # Check to make sure status was 200 or 'success'
+            if not _status_check(json_, type_, status_code, pagination):
+                return
 
-            except ContentTypeError:
-                text = await resp.text()
+            # Did we hit our log limit in the response and need to go
+            # grab more?  (Also tests if data was returned or not)
+            if self._api_has_more_logs_to_grab(json_, type_):
+                need_recursion = True
 
-                # Remove token parameter since we'll be writing this to
-                # log file.
-                filtered_params = {
-                    param: value for param, value in _params.items() if param != "token"
-                }
+            # Initializing an empty list enables us to just use one
+            # '+=' line to add initial logs or supplemental logs
+            # (logs we had to go back and get due to the log
+            # limit in the response)
+            self._prep_type_if_no_logs_already_present(type_)
 
-                # This info will give our logs context as to what caused
-                # the error.
-                error = {
-                    "status_code": status_code,
-                    "response": text,
-                    "url_requested": self.url,
-                    "query_parameters": filtered_params,
-                }
-                logging.error(
-                    "Unexpected response when pulling logs for %s: %s",
-                    type_,
-                    json.dumps(error, indent=2),
-                )
+            # And since we have the former function, we can do this.
+            # It covers both first and recursive calls.
+            self.log_dictionary[type_] += json_["data"]
 
-                # Let this bubble up and stop the program. We don't want
-                # to miss these logs because of the time file being
-                # updated if this script were to complete.
-                raise
+            # If we need to, pull down supplemental logs.
+            if need_recursion:
+                await self._get_remaining_logs(type_, session, _params, pagination)
 
-            else:
+            # If this is NOT a supplemental request for logs, we can
+            # now know the total count of the logs we pulled down for
+            # this type.
+            if not skip:
+                length = str(len(self.log_dictionary[type_]))
+                logging.info("Consumed %s logs for type: %s", length, type_)
 
-                # Check to make sure status was 200 or 'success'
-                if not _status_check(json_, type_, status_code, pagination):
-                    return
+    async def _handle_response(
+        self, _params=None, _type=None, _resp=None, test_error_output=False
+    ):
+        """Handles gleaning data from the aiohttp.ClientResponse
+        object.
 
-                # Did we hit our log limit in the response and need to go
-                # grab more?  (Also tests if data was returned or not)
-                if self._api_has_more_logs_to_grab(json_, type_):
-                    need_recursion = True
+        Parameters
+        ----------
+        _params: dict
+            Parameters that were passed to the aio.http.ClientRequest
+        _type: str
+            The log 'type'
+        _resp: aiohttp.ClientResponse
+            Response object or 'mocked' object for testing.
+        test_error_output: bool
+            Used for unit tests. Set to true if you'd like the error
+            that would be written to logs in case of a
+            ContentTypeError.
+        """
 
-                # Initializing an empty list enables us to just use one
-                # '+=' line to add initial logs or supplemental logs
-                # (logs we had to go back and get due to the log
-                # limit in the response)
-                self._prep_type_if_no_logs_already_present(type_)
+        status_code = _resp.status
 
-                # And since we have the former function, we can do this.
-                # It covers both first and recursive calls.
-                self.log_dictionary[type_] += json_["data"]
+        try:
+            json_ = await _resp.json()
 
-                # If we need to, pull down supplemental logs.
-                if need_recursion:
-                    await self._get_remaining_logs(type_, session, _params, pagination)
+        except ContentTypeError:
+            text = await _resp.text()
 
-                # If this is NOT a supplemental request for logs, we can
-                # now know the total count of the logs we pulled down for
-                # this type.
-                if not skip:
-                    length = str(len(self.log_dictionary[type_]))
-                    logging.info("Consumed %s logs for type: %s", length, type_)
+            # Remove token parameter since we'll be writing this to
+            # log file.
+            filtered_params = {
+                param: value for param, value in _params.items() if param != "token"
+            }
+
+            # This info will give our logs context as to what caused
+            # the error.
+            error = {
+                "status_code": status_code,
+                "response": text,
+                "url_requested": self.url,
+                "query_parameters": filtered_params,
+            }
+
+            # Used for unit testing
+            if test_error_output:
+                return error
+
+            logging.error(
+                "Unexpected response when pulling logs for %s: %s", _type, error
+            )
+
+            # Let this bubble up and stop the program. We don't want
+            # to miss these logs because of the time file being
+            # updated if this script were to complete.
+            raise TypeError(
+                "ContentTypeError when calling Netskope API: {}".format(error)
+            )
+
+        else:
+            return status_code, json_
 
     async def _get_remaining_logs(self, type_, session, _params, pagination):
         """ Make another call to pull down the remaining logs for the

@@ -94,17 +94,94 @@ bootstraps the python script using your virtual environment:
 
 ## Contributing
 
-Check yo' self with PyLint,<br>
-format with Black.<br>
-Thanks for contributing,<br>
-pat yourself on the back.
+For the sake of brevity in collaboration, use Pylint for linting and Black for formatting. Black and Pylint
+don't always get along, so please disable pylint in-line where possible when it fights with Black.
 
-If you wish to fix something,<br>
-open an issue.<br>
-Once you have it fixed,<br>
-pull request with 'Fixed #<num_issue>'.
+Example:
+```python
+self._protected_function()  # pylint: disable=protected-access
+```
 
-Ex: "Fixed #22"
+You'll notice there is currently a lack of tests for this script. Please add tests as you make changes.
+
+Create an issue BEFORE making pull requests. When you make a pull request, please note which
+issue your pull request fixes. For example: ```Fixed #22```.
+
+## Testing
+
+### Run tests
+
+- Be sure that pylint, pylint-aiohttp, pylint-asyncio, and pylint-mock are installed and then
+run the following:
+    ```python
+    $ cd /opt/netskope_log_fetcher
+    $ source venv/bin/activate
+    (venv) pytest tests/
+    ```
+
+### Notes about writing tests for async code
+
+Be sure your tests of async functions are using the ```@pytest.mark.asyncio``` decorator to ensure
+an event loop is properly available for your coroutine.
+
+Testing asyncio functionality is not as straight forward as testing normal python code.
+In the ```tests/helpers.py``` module, you will find a class called ```AsyncHelper```.
+You may use this class to help mock return values that are being awaited.
+
+For example, when you await the aiohttp.ClientResponse.json coroutine, your script expects
+a co-routine. If you mock aiohttp.ClientResponse.json, and you return a normal function, your
+tests may/may not fail. Sometimes, your tests will pass even though they shouldn't and you
+may/may not receive a warning that your 'task' was never awaited.
+
+When you are mocking something that is going to be awaited, you must return a coroutine.
+This is where the AsyncHelper comes in handy:
+
+```python
+class AsyncHelper:
+    """ Class wrapper for helper functions. When unit testing async
+    style stuffz, an 'await' statement expects a coroutine; Therefore,
+    we wrap the desired outcome with a coroutine. It's kind of like
+    a mock for coroutines.
+    """
+
+    @staticmethod
+    async def value(val):
+        """ Coroutine wrapper for mocking with return values."""
+
+        return val
+
+    @staticmethod
+    async def error(error, *args, **kwargs):
+        """ Coroutine wrapper for mocking forced exceptions/errors."""
+
+        raise error(*args, **kwargs)
+
+# A fixture to make the async_helper accessible to the tests
+@pytest.fixture(scope="module")
+def async_helper():
+    return AsyncHelper()
+
+# Be sure that you make the 'return_values' of the coroutines your mocking
+# so that they return one of our AyndHelper coroutines.
+@pytest.mark.asyncio
+async def test_handle_response_content_type_error_during_api_call(
+    mocker, async_helper, req
+):
+    """Tests to see if BaseNetskopeClient._handle_response handles a\
+    ContentTypeError properly.
+    """
+
+    config = {
+        "json.return_value": async_helper.error(ContentTypeError, "Placeholder", ()),
+        "text.return_value": async_helper.value(req.text),
+        "status": req.status,
+    }
+    mocked = mocker.MagicMock(**config)
+    with pytest.raises(ContentTypeError):
+        await req.base_client._handle_response(  # pylint: disable=protected-access
+            _params=req.params, _type=req.type_, _resp=mocked
+        )
+```
 
 ## Authors
 
