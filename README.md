@@ -97,9 +97,15 @@ bootstraps the python script using your virtual environment:
 For the sake of brevity in collaboration, use Pylint for linting and Black for formatting. Black and Pylint
 don't always get along, so please disable pylint in-line where possible when it fights with Black.
 
-Example:
+Example of disabling a pylint warning:
 ```python
-self._protected_function()  # pylint: disable=protected-access
+client = SomeClientObject(url="https://test.example.com/api1")
+
+# The following in-line comment disables the 'protected-access' warning from
+# pylint. This particular example is handy during unit testing where you may
+# want to test your protected functions of a class.
+
+client._protected_function()  # pylint: disable=protected-access
 ```
 
 You'll notice there is currently a lack of tests for this script. Please add tests as you make changes.
